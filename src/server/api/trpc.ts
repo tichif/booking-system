@@ -56,14 +56,38 @@ export const createTRPCContext = (_opts: CreateNextContextOptions) => {
  *
  * This is where the tRPC API is initialized, connecting the context and transformer.
  */
-import { initTRPC } from '@trpc/server';
+import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
+import { verifyAuth } from '~/lib/auth';
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
   transformer: superjson,
   errorFormatter({ shape }) {
     return shape;
   },
+});
+
+const isAdmin = t.middleware(async ({ ctx, next }) => {
+  const { req } = ctx;
+  const token = req.cookies['user-token'];
+
+  if (!token) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Missing user token',
+    });
+  }
+
+  const verifiedToken = await verifyAuth(token);
+
+  if (!verifiedToken) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Invalid user token',
+    });
+  }
+
+  return next();
 });
 
 /**
@@ -88,3 +112,4 @@ export const createTRPCRouter = t.router;
  * are logged in.
  */
 export const publicProcedure = t.procedure;
+export const adminProcedure = t.procedure.use(isAdmin);
